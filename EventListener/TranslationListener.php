@@ -1,8 +1,8 @@
 <?php
 namespace AO\TranslationBundle\EventListener;
-use AO\TranslationBundle\Entity\Cache;
-use AO\TranslationBundle\Entity\Message;
-use AO\TranslationBundle\Entity\Domain;
+
+use AO\TranslationBundle\Entity;
+use AO\TranslationBundle\Translation\Message;
 use AO\TranslationBundle\Translation\Translator;
 use Symfony\Component\EventDispatcher\Event;
 use AO\TranslationBundle\Translation;
@@ -37,120 +37,126 @@ class TranslationListener
     }
 
     /**
+     * Returns Cache entity for given message.
+     *
+     * Creates it if not exists.
+     *
+     * @param Message $message
+     * @return Entity\Cache
+     */
+    protected function getCacheForMessage(Message $message)
+    {
+        $cache = $this->em
+            ->getRepository('AO\TranslationBundle\Entity\Cache')
+            ->findOneBy(array(
+                'bundle' => $message->getBundle(),
+                'controller' => $message->getController(),
+                'action' => $message->getAction()
+            ))
+        ;
+
+        if (!$cache) {
+            $cache = new Entity\Cache();
+            $cache->setBundle($message->getBundle());
+            $cache->setController($message->getController());
+            $cache->setAction($message->getAction());
+
+            $this->em->persist($cache);
+            $this->em->flush();            
+        }
+
+        return $cache;
+    }
+
+    /**
+     * Returns Domain entity by name.
+     *
+     * Creates it if not exists.
+     *
+     * @param string $name
+     * @return Entity\Domain
+     */
+    protected function getDomain($name) 
+    {
+        $domain = $this->em
+            ->getRepository('AO\TranslationBundle\Entity\Domain')
+            ->findOneByName($name)
+        ;
+
+        if (!$domain) {
+            $domain = new Domain();
+            $domain->setName($name);
+
+            $this->em->persist($domain);
+            $this->em->flush();
+        }
+
+        return $domain;
+    }
+
+    /**
      * Save domain, message & cache info on kernel.terminate
      * @param Event $event
      */
     public function onTerminate(Event $event)
     {
-        $t_messages = $this->translator->getMessages();
+        $messages = $this->translator->getMessages();
 
         // prepare domains ids array for new messages
         $domains = array();
         // prepare cache ids array for not cached messages
         $caches = array();
 
-        foreach ($t_messages as $domain => $messages) {
-            foreach ($messages as $message) {
-                if ($message->isNew()) {
+        foreach ($messages as $domain => $domainMessages) {
+            foreach ($domainMessages as $message) {
+                if ($message->isNew() && !array_key_exists($domain, $domains)) {
                     // we need domain ids only for new messages
-                    $domains[$domain] = null;
+                    $domains[$domain] = $this->getDomain($domain);
                 }
 
-                if (!$message->isCached()) {
+                if (!$message->isCached() && !array_key_exists($message->getCacheKey(), $caches)) {
                     // we need cache ids only for not cached messages
-                    $caches[$message->getCacheKey()] = array(
-                        'bundle' => $message->getBundle(),
-                        'controller' => $message->getController(),
-                        'action' => $message->getAction()
-                    );
+                    $caches[$message->getCacheKey()] = $this->getCacheForMessage($message);
                 }
-            }
-        }
-
-        // load domain ids
-        if ($domains) {
-            // load existing domain ids
-            $qb = $this->em->createQueryBuilder();
-            $qb
-                ->select('d.id, d.name')->from('\AO\TranslationBundle\Entity\Domain', 'd')
-                ->where('d.name IN (:names)')
-                ->setParameter('names', array_keys($domains))
-            ;
-
-            $q = $qb->getQuery();
-            $iterable = $q->iterate();
-
-            while ($row = $iterable->next()) {
-                $row = array_shift($row);
-                $domains[$row['name']] = $row['id'];
-            }
-
-            // create missing domains and get its ids
-            foreach ($domains as $domain => &$id) {
-                if (!$id) {
-                    $d = new Domain();
-                    $d->setName($domain);
-                    $this->em->persist($d);
-                    $this->em->flush();
-                    $id = $d->getId();
-                }
-            }
-        }
-
-        // load cache ids
-        foreach ($caches as &$cache) {
-            // load existing cache ids
-            $qb = $this->em->createQueryBuilder();
-            $qb
-                ->select('c')
-                ->from('\AO\TranslationBundle\Entity\Cache', 'c')
-                ->where('c.bundle = :bundle AND c.controller = :controller AND c.action = :action')
-                ->setParameters($cache)
-            ;
-
-            $c = $qb->getQuery()->getOneOrNullResult();
-
-            if ($c) {
-                $cache = $c->getId();
-            } else {
-                // create missing cache and get its id
-                $c = new Cache();
-                $c->setBundle($cache['bundle']);
-                $c->setController($cache['controller']);
-                $c->setAction($cache['action']);
-                $this->em->persist($c);
-                $this->em->flush();
-                $cache = $c->getId();
             }
         }
 
         // save messages
-        foreach ($t_messages as $domain => $messages) {
-            foreach ($messages as $message) {
+        foreach ($messages as $domain => $domainMessages) {
+            foreach ($domainMessages as $message) {
                 // create new message
                 if ($message->isNew()) {
-                    $m = new Message();
-                    $m->setIdentification($message->getIdentification());
-                    $m->setDomain($this->em->getReference('\AO\TranslationBundle\Entity\Domain', $domains[$message->getDomain()]));
-                    $m->setParameters($message->getParameters());
-                    $this->em->persist($m);
+                    $messageEntity = new Entity\Message();
+                    $messageEntity->setIdentification($message->getIdentification());
+                    $messageEntity->setDomain($domains[$message->getDomain()]);
+                    $messageEntity->setParameters($message->getParameters());
+
+                    $message->setEntity($messageEntity);
+
+                    $this->em->persist($messageEntity);
                     $this->em->flush();
-                    $message->setEntity($m);
                 }
 
                 // add cache
                 if (!$message->isCached()) {
-                    $m = $message->getEntity();
-                    $c = $caches[$message->getCacheKey()];
-                    $m->getCaches()->add($this->em->getReference('\AO\TranslationBundle\Entity\Cache', $c));
-                    $this->em->persist($m);
+                    $messageEntity = $message->getEntity();
+
+                    $messageCache = $caches[$message->getCacheKey()];
+                    $messageCaches = $messageEntity->getCaches();
+
+                    if (!$messageCaches->contains($messageCache)) {
+                        $messageCaches->add($messageCache);
+                    }
+
+                    $this->em->persist($messageEntity);
                 }
 
                 // update parameters if needed
                 if ($message->getUpdateParameters()) {
-                    $m = $message->getEntity();
-                    $m->setParameters($message->getParameters());
-                    $this->em->persist($m);
+                    $messageEntity = $message->getEntity();
+                    $messageEntity->setParameters($message->getParameters());
+
+                    $this->em->persist($messageEntity);
                 }
             }
         }
