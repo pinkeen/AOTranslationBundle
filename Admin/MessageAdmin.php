@@ -47,6 +47,9 @@ class MessageAdmin extends Admin
         $datagridMapper
             ->add('domain')
             ->add('identification')
+            ->add('translations.content', null, [
+                'label' => 'Content'
+            ])
         ;
     }
 
