@@ -5,48 +5,61 @@
     xsi:schemaLocation="http://symfony.com/schema/dic/services http://symfony.com/schema/dic/services/services-1.0.xsd">
 
 
-    <parameters>
-        <parameter key="ao_translation.data_collector.class">AO\TranslationBundle\DataCollector\TranslationDataCollector</parameter>
-        <parameter key="ao_translation.loader.doctrine.class">AO\TranslationBundle\Translation\Loader\DoctrineLoader</parameter>
-    </parameters>
+<parameters>
+    <parameter key="ao_translation.data_collector.class">AO\TranslationBundle\DataCollector\TranslationDataCollector</parameter>
+    <parameter key="ao_translation.loader.doctrine.class">AO\TranslationBundle\Translation\Loader\DoctrineLoader</parameter>
+</parameters>
 
-    <services>
-      <service id="ao_translation.entity_manager" class="%doctrine.orm.entity_manager.class%" factory-service="doctrine" factory-method="getManager">
-          <argument>%ao_translation.entity_manager%</argument>
-      </service>
+<services>
+    <service id="ao_translation.entity_manager" class="%doctrine.orm.entity_manager.class%" factory-service="doctrine" factory-method="getManager">
+        <argument>%ao_translation.entity_manager%</argument>
+    </service>
 
-      <service id="ao_translation.loader.doctrine" class="%ao_translation.loader.doctrine.class%">
-          <tag name="translation.loader" format="doctrine" alias="ao"/>
-          <argument type="service" id="service_container" />
-      </service>
+    <service id="ao_translation.loader.doctrine" class="%ao_translation.loader.doctrine.class%">
+        <tag name="translation.loader" format="doctrine" alias="ao"/>
+        <argument type="service" id="service_container" />
+    </service>
 
-      <service id="ao_translation.data_collector" class="%ao_translation.data_collector.class%">
-          <tag name="data_collector" template="AOTranslationBundle:Collector:translation" id="translation" />
-          <argument type="service" id="service_container" />
-      </service>
+    <service id="ao_translation.data_collector" class="%ao_translation.data_collector.class%">
+        <tag name="data_collector" template="AOTranslationBundle:Collector:translation" id="translation" />
+        <argument type="service" id="service_container" />
+    </service>
 
-      <service id="ao_translation.translation_listener" class="AO\TranslationBundle\EventListener\TranslationListener">
-          <tag name="kernel.event_listener" event="kernel.terminate" method="onTerminate" />
-          <tag name="kernel.event_listener" event="console.command" method="onCommand" />
-          <tag name="kernel.event_listener" event="console.terminate" method="onTerminate" />
-          <argument type="service" id="translator" />
-          <argument type="service" id="ao_translation.entity_manager" />
-      </service>
+    <service id="ao_translation.translation_listener" class="AO\TranslationBundle\EventListener\TranslationListener">
+        <tag name="kernel.event_listener" event="kernel.terminate" method="onTerminate" />
+        <tag name="kernel.event_listener" event="console.command" method="onCommand" />
+        <tag name="kernel.event_listener" event="console.terminate" method="onTerminate" />
+        <argument type="service" id="translator" />
+        <argument type="service" id="ao_translation.entity_manager" />
+    </service>
 
-      <service id="ao_translation.admin.message" class="AO\TranslationBundle\Admin\MessageAdmin">
+    <service id="ao_translation.admin.model_manager" class="AO\TranslationBundle\Admin\Model\TranslationModelManager">
+        <argument type="service" id="doctrine" />
+        <argument type="service" id="ao_translation.entity_manager" />
+    </service>
+
+    <service id="ao_translation.admin.message" class="AO\TranslationBundle\Admin\MessageAdmin">
         <tag name="sonata.admin" manager_type="orm" group="Translations" label="Message"/>
+
         <argument />
         <argument>AO\TranslationBundle\Entity\Message</argument>
         <argument />
-        <call method="setContainer">
-          <argument type="service" id="service_container" />
-        </call>
-        <call method="setTemplate">
-          <argument>edit</argument>
-          <argument>AOTranslationBundle:MessageAdmin:edit.html.twig</argument>
-        </call>
-      </service>
 
-    </services>
+        <call method="setContainer">
+            <argument type="service" id="service_container" />
+        </call>
+
+        <call method="setTemplate">
+            <argument>edit</argument>
+            <argument>AOTranslationBundle:MessageAdmin:edit.html.twig</argument>
+        </call>
+
+        <call method="setModelManager">
+            <argument type="service" id="ao_translation.admin.model_manager" />
+        </call>
+
+    </service>
+
+</services>
 
 </container>

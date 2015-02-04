@@ -23,7 +23,7 @@ class Configuration implements ConfigurationInterface
         $rootNode
             ->children()
                 ->scalarNode('entity_manager')
-                ->defaultValue('default')
+                    ->defaultValue('default')
                 ->end()
                 ->arrayNode('locales')
                     ->prototype('array')
